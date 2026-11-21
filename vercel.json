@@ -3,18 +3,11 @@
   "framework": "vite",
   "buildCommand": "npx vite build",
   "outputDirectory": "dist/client",
-  "rewrites": [
+  "redirects": [
     {
-      "source": "/api/:path*",
-      "destination": "https://ai-chat-6gfzjw-preview.freebuff.site/api/:path*"
-    },
-    {
-      "source": "/auth/:path*",
-      "destination": "https://ai-chat-6gfzjw-preview.freebuff.site/auth/:path*"
-    },
-    {
-      "source": "/:path*",
-      "destination": "/index.html"
+      "source": "/(.*)",
+      "destination": "https://ai-chat-6gfzjw-preview.freebuff.site/$1",
+      "permanent": false
     }
   ]
 }

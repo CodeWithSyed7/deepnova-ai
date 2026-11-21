@@ -137,38 +137,34 @@ Sign in with Freebuff is required on a deployed origin: without it nobody can
 chat, because every reply spends the owner's credits. The loopback development
 user can never activate off localhost.
 
-## Vercel frontend (optional split)
+## Vercel frontend
 
-The backend stays on Cloudflare Workers with D1. Vercel can serve the frontend
-only, because it cannot run the Worker, D1 or Freebuff auth.
+The backend stays on Cloudflare Workers with D1, and Sign in with Freebuff owns
+`/auth/freebuff/*` there. Its session is a `__Host-` cookie and its OIDC
+callback is registered for exactly one origin, so the origin that signs a
+visitor in must be the Worker's own origin. A second hostname cannot get a
+first-party session: a cookie set for `*.vercel.app` is never sent to
+`*.freebuff.site`, and the provider returns the authorization code to the
+registered callback, not to a proxy in front of it.
 
-The Worker already serves the built app from `dist/client`, so a Vercel deploy
-only needs to serve those static files and forward `/api/*` and `/auth/*` to
-the Worker. Keeping both paths on the Vercel hostname matters: the session
-cookie is `SameSite=Lax`, so a browser on `*.vercel.app` would never send it to
-`*.workers.dev` directly. Proxying keeps the cookie first-party.
+So Vercel forwards its hostname to the canonical app instead of serving a
+second copy of the frontend that can never sign in. `vercel.json` answers every
+path with a 307 to the Worker origin, which keeps `/`, deep links and
+`/auth/freebuff/*` on the one origin that holds the session:
 
-1. Import `CodeWithSyed7/deepnova-ai`, branch `main`, framework **Vite**.
-2. Build command `npx vite build`, output directory `dist/client` (already in
-   `vercel.json`). It runs the local Vite with either npm or Bun. No `VITE_*`
-   variables are needed: the app calls relative `/api` paths.
-3. In `vercel.json`, replace `https://REPLACE-WITH-YOUR-WORKER-HOST` with the
-   real Worker origin from `wrangler deploy` or Sites (no trailing slash).
-4. Add the Vercel origin(s) to the Worker as a customer variable
-   `CLIENT_ORIGINS`, comma-separated, e.g.
-   `https://deepnova-ai.vercel.app,https://deepnova.yourdomain.com`. Without
-   it every write (`POST /api/chat`, rename, delete) is refused with 403
-   `Cross-origin request refused.`, because the browser's `Origin` is the
-   Vercel host while `APP_ORIGIN` is the Worker host.
-5. Keep `OPENAI_API_KEY` only on the Worker (Sites → Secrets). Never add it to
-   Vercel.
+    https://deepnova-web.vercel.app/  ->  https://ai-chat-6gfzjw-preview.freebuff.site/
 
-Sign-in through the proxy finishes on the Worker origin, not the Vercel one,
-because the OIDC redirect URI is built from `APP_ORIGIN`. To keep users on the
-Vercel domain after sign-in, set `APP_ORIGIN` to that domain on your own Worker
-deployment and register the same origin as a callback for the Freebuff OIDC
-client; Sites injects `APP_ORIGIN` itself, so that variant needs your own
-`wrangler deploy`.
+Sign-in, sign-out, session refresh and `/api/*` then all run first-party there.
+No `VITE_*` variable and no API key belongs on Vercel.
+
+Serving the app under a domain of your own needs the Worker itself on that
+domain: run your own `wrangler deploy` with `APP_ORIGIN=https://your.domain` and
+register that origin as a callback for the Freebuff OIDC client
+(`npx @freebuff/auth register ... --redirect-uri https://your.domain/auth/freebuff/callback`).
+Freebuff Sites injects `APP_ORIGIN` itself, so a Sites deployment cannot do it.
+If a second origin still posts mutations to the Worker, list it in
+`CLIENT_ORIGINS` (comma-separated); `POST /api/chat`, rename and delete are
+otherwise refused with 403 `Cross-origin request refused.`.
 
 `vercel.json` is only read by Vercel. The Cloudflare deploy still uses
 `deploy.json` and `dist/`.
