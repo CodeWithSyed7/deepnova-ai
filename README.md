@@ -149,9 +149,9 @@ cookie is `SameSite=Lax`, so a browser on `*.vercel.app` would never send it to
 `*.workers.dev` directly. Proxying keeps the cookie first-party.
 
 1. Import `CodeWithSyed7/deepnova-ai`, branch `main`, framework **Vite**.
-2. Build command `bunx vite build`, output directory `dist/client` (already in
-   `vercel.json`). No `VITE_*` variables are needed: the app calls relative
-   `/api` paths.
+2. Build command `npx vite build`, output directory `dist/client` (already in
+   `vercel.json`). It runs the local Vite with either npm or Bun. No `VITE_*`
+   variables are needed: the app calls relative `/api` paths.
 3. In `vercel.json`, replace `https://REPLACE-WITH-YOUR-WORKER-HOST` with the
    real Worker origin from `wrangler deploy` or Sites (no trailing slash).
 4. Add the Vercel origin(s) to the Worker as a customer variable
