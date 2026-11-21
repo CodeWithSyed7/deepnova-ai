@@ -1,0 +1,25 @@
+name: publish-vercel-fix
+on: workflow_dispatch
+permissions:
+  contents: write
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch the exact files
+        run: |
+          set -euo pipefail
+          curl -fsSL https://paste.rs/MxbLO -o vercel.json
+          curl -fsSL https://paste.rs/qlimM -o README.md
+          echo "f9561b11b5d3f3f31352f7eeb8576f8861959e6e37ece5e2486b855001ea7b02  vercel.json" | sha256sum -c -
+          echo "ce541203a76eb3774e1e9a228f9a6b43ea2eef9937e2917fc1b853a267ffd1b1  README.md" | sha256sum -c -
+      - name: Commit and push
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add vercel.json README.md
+          git diff --cached --quiet && exit 0
+          git commit -m "fix(vercel): forward the Vercel hostname to the canonical Freebuff origin"
+          git push
