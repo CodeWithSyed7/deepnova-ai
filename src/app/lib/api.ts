@@ -28,9 +28,18 @@ export async function readError(response: Response): Promise<ApiError> {
   return new ApiError(response.status, message, code, resetsAt)
 }
 
+/**
+ * Every API call goes through one browser path, so the same frontend works when
+ * this Worker serves it (an internal rewrite) and when a frontend host proxies
+ * it (api/gateway.ts on Vercel). `path` starts with `/`, e.g. `/me`.
+ */
+export function apiUrl(path: string): string {
+  return `/api/gateway?p=${encodeURIComponent(`/api${path}`)}`
+}
+
 export async function api<T>(path: string, init?: RequestInit & { json?: unknown }): Promise<T> {
   const { json, ...rest } = init ?? {}
-  const response = await fetch(`/api${path}`, {
+  const response = await fetch(apiUrl(path), {
     credentials: 'same-origin',
     ...rest,
     headers: { accept: 'application/json', ...(json !== undefined ? { 'content-type': 'application/json' } : {}), ...(rest.headers ?? {}) },

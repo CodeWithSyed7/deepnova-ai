@@ -55,8 +55,7 @@ export function Settings() {
               {me.user.email && <p className="truncate text-[13px] text-muted">{me.user.email}</p>}
             </div>
             {me.capabilities.auth === 'freebuff' ? (
-              <form method="post" action="/auth/freebuff/signout">
-                <input type="hidden" name="returnTo" value="/" />
+              <form method="post" action="/api/signout">
                 <Button type="submit">Sign out</Button>
               </form>
             ) : (

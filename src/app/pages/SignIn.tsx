@@ -13,8 +13,9 @@ export function SignIn() {
   const params = new URLSearchParams(window.location.search)
   const error = params.get('error')
   const detail = params.get('error_description')
-  const returnTo = encodeURIComponent(`${window.location.pathname}${window.location.search}`)
-  const href = `/auth/freebuff/signin?returnTo=${returnTo}`
+  // Sign-in always finishes on the canonical origin, which then hands the
+  // session back to this host (see src/worker/handoff.ts).
+  const href = '/auth/handoff/begin'
   return (
     <div className="flex min-h-dvh flex-col">
       <header className="mx-auto flex h-16 w-full max-w-[1080px] items-center px-5 sm:px-8">
@@ -98,6 +99,7 @@ export function SignIn() {
 function friendly(error: string, detail: string | null): string {
   const text = `${error} ${detail ?? ''}`.toLowerCase()
   if (text.includes('access_denied') || text.includes('cancel')) return 'The sign-in was cancelled before it completed.'
+  if (text.includes('handoff') || text.includes('incomplete')) return 'The sign-in could not be carried over to this site. Please try again.'
   if (text.includes('expired') || text.includes('state')) return 'That sign-in link expired.'
   if (text.includes('invalid') || text.includes('token')) return 'The sign-in link was not valid.'
   if (detail && detail.length <= 160) return detail

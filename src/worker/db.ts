@@ -45,6 +45,15 @@ const SCHEMA = [
   )`,
   `CREATE INDEX IF NOT EXISTS reply_usage_created ON reply_usage(created_at)`,
   `CREATE INDEX IF NOT EXISTS reply_usage_owner_created ON reply_usage(owner_sub, created_at)`,
+  // One-time codes that hand a finished sign-in to a frontend on another host.
+  // Only the code's hash is stored, and a row is deleted when it is redeemed.
+  `CREATE TABLE IF NOT EXISTS handoff_codes (
+    code_hash TEXT PRIMARY KEY,
+    session TEXT NOT NULL,
+    expires_at INTEGER NOT NULL,
+    created_at INTEGER NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS handoff_codes_expires ON handoff_codes(expires_at)`,
 ]
 
 const ready = new WeakMap<D1Database, Promise<void>>()
