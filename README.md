@@ -122,6 +122,8 @@ existing ones are never edited in place once deployed.
   streaming) and filled in when the turn ends.
 - `reply_usage` — one row per reply: prompt and completion tokens, as the API
   reported them or estimated when it reported none.
+- `handoff_codes` — hashed one-time codes (120 s) that hand a finished sign-in
+  to a frontend on another host; a row is deleted when it is redeemed.
 
 Every query is scoped by `owner_sub`. There is no cross-user read path.
 
@@ -137,45 +139,64 @@ Sign in with Freebuff is required on a deployed origin: without it nobody can
 chat, because every reply spends the owner's credits. The loopback development
 user can never activate off localhost.
 
-## Vercel frontend
+## Vercel frontend (`https://deepnova-web.vercel.app`)
 
-The backend stays on Cloudflare Workers with D1, and Sign in with Freebuff owns
-`/auth/freebuff/*` there. Its session is a `__Host-` cookie and its OIDC
-callback is registered for exactly one origin, so the origin that signs a
-visitor in must be the Worker's own origin. A second hostname cannot get a
-first-party session: a cookie set for `*.vercel.app` is never sent to
-`*.freebuff.site`, and the provider returns the authorization code to the
-registered callback, not to a proxy in front of it.
+The app can be served from the Vercel domain while the Worker keeps the
+backend: Hono, D1, the model calls and Sign in with Freebuff all stay on
+Cloudflare. The Vercel project builds the same frontend (`npx vite build`) and
+runs three small functions under `api/`. No API key or `VITE_*` variable
+belongs on Vercel; `AUTH_ORIGIN` is optional (it defaults to the Worker origin).
 
-So Vercel forwards its hostname to the canonical app instead of serving a
-second copy of the frontend that can never sign in. `vercel.json` answers every
-path with a 307 to the Worker origin, which keeps `/`, deep links and
-`/auth/freebuff/*` on the one origin that holds the session:
+The one hard constraint is the session. Sign in with Freebuff sets a `__Host-`
+cookie and registers its OIDC callback for exactly one origin, so signing in
+can only finish on the Worker's origin — a cookie set there is never sent to
+`*.vercel.app`, and the provider returns the code to the registered callback.
+The app stays signed in on Vercel through a **session handoff**:
 
-    https://deepnova-web.vercel.app/  ->  https://ai-chat-6gfzjw-preview.freebuff.site/
+1. `GET /auth/handoff/begin` (a redirect in `vercel.json`) opens the Worker's
+   `/auth/freebuff/signin` with `returnTo=/auth/handoff/mint`.
+2. Sign in with Freebuff completes on the Worker origin, which sets its session
+   cookie there.
+3. `/auth/handoff/mint` turns that session into a 256-bit single-use code
+   (only its SHA-256 is stored, in `handoff_codes`, for 120 seconds) and sends
+   the browser to `/api/handoff?code=…` on the Vercel domain.
+4. `api/handoff.ts` redeems the code server-to-server at
+   `POST /auth/handoff/exchange` and answers with the same session as a
+   `__Host-freebuff_session` cookie on the Vercel host — HttpOnly, so page
+   script never sees a token.
 
-Sign-in, sign-out, session refresh and `/api/*` then all run first-party there.
-No `VITE_*` variable and no API key belongs on Vercel.
+After that the session is first-party on Vercel and every call goes through
+`api/gateway.ts`: the frontend calls one path, `/api/gateway?p=/api/…`, which
+the Worker handles as an internal rewrite when it serves the app, and the
+Vercel function forwards to the Worker when it does not. The gateway relays the
+cookie, streams the reply back untouched (SSE keeps working) and copies a
+refreshed session cookie back to the browser. Its target is always the Worker's
+origin under `/api/`, so it cannot be pointed elsewhere. The Worker accepts
+`HANDOFF_ORIGIN` (set in Sites → Secrets) as an origin for mutations, so
+`POST /api/chat`, rename and delete are not refused with
+`403 Cross-origin request refused.`.
 
-Serving the app under a domain of your own needs the Worker itself on that
-domain: run your own `wrangler deploy` with `APP_ORIGIN=https://your.domain` and
-register that origin as a callback for the Freebuff OIDC client
-(`npx @freebuff/auth register ... --redirect-uri https://your.domain/auth/freebuff/callback`).
-Freebuff Sites injects `APP_ORIGIN` itself, so a Sites deployment cannot do it.
-If a second origin still posts mutations to the Worker, list it in
-`CLIENT_ORIGINS` (comma-separated); `POST /api/chat`, rename and delete are
-otherwise refused with 403 `Cross-origin request refused.`.
+Signing out posts to `/api/signout`: the Vercel function revokes the refresh
+token at the Worker and closes the cookie on the Vercel host.
+
+To deploy: set `HANDOFF_ORIGIN=https://deepnova-web.vercel.app` on the Sites
+deployment, keep `vercel.json` and `api/` in the repository, and let Vercel
+build. Serving the app on a domain of your own still needs the Worker itself on
+that domain (`wrangler deploy` with `APP_ORIGIN` plus a registered
+`/auth/freebuff/callback`), which Freebuff Sites' injected `APP_ORIGIN` cannot
+do.
 
 `vercel.json` is only read by Vercel. The Cloudflare deploy still uses
 `deploy.json` and `dist/`.
 
 ## Testing
 
-`bun test` covers the auth boundary: only an unconfigured loopback origin gets
-the development user, configured auth uses the canonical origin, and private
-routes refuse anonymous and foreign-origin requests with `Cache-Control:
-private, no-store`. `bun run typecheck` and `bun run build` must pass before a
-deploy.
+`bun test` covers the auth boundary (only an unconfigured loopback origin gets
+the development user, configured auth uses the canonical origin, private routes
+refuse anonymous and foreign-origin requests with `Cache-Control: private,
+no-store`), the handoff (single-use codes, expiry, trusted origins) and the
+gateway rewrite (only `/api/` paths on this origin). `bun run typecheck` and
+`bun run build` must pass before a deploy.
 
 ## Security notes
 
@@ -192,8 +213,13 @@ Personalised responses are `Cache-Control: private, no-store`.
 
 ## Where things are
 
-- `src/worker/index.ts` — routes, error and asset fallbacks.
+- `src/worker/index.ts` — routes, the internal gateway rewrite, error and asset
+  fallbacks.
 - `src/worker/auth.ts` — Freebuff integration, same-origin guard, dev user.
+- `src/worker/handoff.ts` — starts sign-in, mints and redeems the one-time
+  handoff code, and signs out.
+- `api/` — the three Vercel functions: `gateway.ts` (API proxy), `handoff.ts`
+  (redeem a code), `signout.ts`.
 - `src/worker/ai.ts` — model capabilities, streaming, error mapping, token
   estimates.
 - `src/worker/routes/chat.ts` — one turn: limits, storage, SSE, usage.
@@ -213,6 +239,8 @@ Personalised responses are `Cache-Control: private, no-store`.
 - **"Almost there" screen** — the D1 binding named `DB` is missing.
 - **401 on every `/api/*` call** — no session; sign in again.
 - **403 on a mutation** — the request's `Origin` does not match the app origin.
+- **`/signin?error=handoff_failed`** — the one-time code expired (120 s) or was
+  already used; sign in again.
 - **"This app is resting for today"** — a `GLOBAL_DAILY_*` ceiling was reached;
   the notice says which and when it resets (midnight UTC).
 - **Stopped replies show "Stopped"** — expected: partial text is kept.
