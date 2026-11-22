@@ -59,17 +59,16 @@ export function appOrigin(env: Env, request: Request): string | null {
 }
 
 /**
- * Origins allowed to submit mutations: the canonical origin plus any explicit
- * extra client origins (a frontend on another host that proxies to this
- * Worker). Never a wildcard, and empty by default.
+ * Origins allowed to submit mutations: the canonical origin plus the app host
+ * that receives the handed-off session and any explicit extra client origins.
+ * Never a wildcard, and empty by default.
  */
-function allowedOrigins(env: Env, request: Request): string[] {
+export function clientOrigins(env: Env, request: Request): string[] {
   const canonical = appOrigin(env, request)
-  const extra = (env.CLIENT_ORIGINS ?? '')
-    .split(',')
-    .map((value) => value.trim().replace(/\/$/, ''))
+  const extra = [env.HANDOFF_ORIGIN ?? '', ...(env.CLIENT_ORIGINS ?? '').split(',')]
+    .map((value) => value.trim().replace(/\/+$/, ''))
     .filter(Boolean)
-  return canonical ? [canonical, ...extra] : extra
+  return [...new Set(canonical ? [canonical, ...extra] : extra)]
 }
 
 /** Requires a signed-in user and, for mutations, a same-origin request. */
@@ -77,7 +76,7 @@ export const requireUser: MiddlewareHandler<AppContext> = async (c, next) => {
   c.header('Cache-Control', 'private, no-store')
   const request = c.req.raw
   if (request.method !== 'GET' && request.method !== 'HEAD') {
-    const origins = allowedOrigins(c.env, request)
+    const origins = clientOrigins(c.env, request)
     if (origins.length === 0 || !origins.some((origin) => isSameOriginRequest(request, origin))) {
       return c.json({ error: 'Cross-origin request refused.' }, 403)
     }

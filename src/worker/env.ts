@@ -14,9 +14,14 @@ export interface Env {
   FREEBUFF_CLIENT_ID?: string
   FREEBUFF_ISSUER?: string
   APP_ORIGIN?: string
+  // The browser-facing app origin when the frontend is not served by this
+  // Worker (for example https://deepnova-web.vercel.app). Sign-in hands the
+  // finished session over to it with a one-time code. Unset means the app is
+  // served here and no handoff happens.
+  HANDOFF_ORIGIN?: string
   // Optional comma-separated list of extra browser origins that may call the
-  // API with a session cookie (for example a Vercel frontend that proxies
-  // /api and /auth to this Worker). Unset means only APP_ORIGIN is accepted.
+  // API with a session cookie. Unset means only APP_ORIGIN (and
+  // HANDOFF_ORIGIN) is accepted.
   CLIENT_ORIGINS?: string
 }
 
