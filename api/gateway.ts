@@ -1,5 +1,3 @@
-import { AUTH_ORIGIN } from './_shared'
-
 /**
  * The app's API behind https://deepnova-web.vercel.app.
  *
@@ -11,8 +9,14 @@ import { AUTH_ORIGIN } from './_shared'
  * It is a forwarder, nothing more: no session state, no secrets, and no change
  * to who the caller is. Only paths on the Worker under `/api/` are proxied, so
  * it cannot be pointed at another host.
+ *
+ * This file is self-contained on purpose: Vercel runs `api/*.ts` as ES modules,
+ * where a relative import without a file extension does not resolve.
  */
 export const maxDuration = 60
+
+/** The canonical Worker origin. Set AUTH_ORIGIN in Vercel if it ever moves. */
+const AUTH_ORIGIN = (process.env.AUTH_ORIGIN ?? 'https://ai-chat-6gfzjw-preview.freebuff.site').replace(/\/+$/, '')
 
 const GATEWAY = '/api/gateway'
 
