@@ -43,10 +43,19 @@ const inflightCount = (owner: string) => {
 // otherwise hold the upstream request (and the credits it spends) open.
 const WRITE_TIMEOUT = 10_000
 
+// Room for MAX_MESSAGE_CHARS plus JSON framing. A body larger than this is
+// refused before it is buffered and parsed just to be rejected.
+const MAX_BODY_BYTES = 64 * 1024
+
 chat.post('/', async (c) => {
   const db = c.get('db')
   const owner = c.get('user').sub
   if (!aiConfigured(c.env)) return c.json({ error: 'not_configured', message: 'No API key is configured yet.' }, 503)
+
+  const declared = Number(c.req.header('content-length') ?? '')
+  if (Number.isFinite(declared) && declared > MAX_BODY_BYTES) {
+    return c.json({ error: 'too_large', message: 'That message is too large.' }, 413)
+  }
 
   const input = await c.req.json<Input>().catch(() => ({}) as Input)
   const regenerate = input.regenerate === true
@@ -108,7 +117,9 @@ chat.post('/', async (c) => {
     const lastUser = [...history].reverse().find((m) => m.role === 'user')
     if (!lastUser) return c.json({ error: 'conversation', message: 'Nothing to regenerate.' }, 400)
     userMessage = lastUser
-    statements.push(db.prepare(`DELETE FROM messages WHERE owner_sub = ? AND conversation_id = ? AND created_at > ?`).bind(owner, conversation.id, lastUser.createdAt))
+    // Only replies can follow the last question, so a concurrent turn's user
+    // row in the same millisecond is never swept up with them.
+    statements.push(db.prepare(`DELETE FROM messages WHERE owner_sub = ? AND conversation_id = ? AND role = 'assistant' AND created_at > ?`).bind(owner, conversation.id, lastUser.createdAt))
     history.splice(history.indexOf(lastUser) + 1)
   } else {
     userMessage = { id: id(), conversationId: conversation.id, role: 'user', content, model: null, interrupted: false, createdAt: t }
@@ -183,7 +194,8 @@ chat.post('/', async (c) => {
       gone = true
       controller.abort()
       await (text ? save(true) : discard())
-      if (text || reported.completionTokens) await recordUsage()
+      // Billed work still counts even when no text reached the reader.
+      if (text || reported.promptTokens !== undefined || reported.completionTokens) await recordUsage()
     }
     stream.onAbort(() => void abandon())
 

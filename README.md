@@ -144,7 +144,7 @@ user can never activate off localhost.
 The app can be served from the Vercel domain while the Worker keeps the
 backend: Hono, D1, the model calls and Sign in with Freebuff all stay on
 Cloudflare. The Vercel project builds the same frontend (`npx vite build`) and
-runs three small functions under `api/`. No API key or `VITE_*` variable
+runs four small functions under `api/`. No API key or `VITE_*` variable
 belongs on Vercel; `AUTH_ORIGIN` is optional (it defaults to the Worker origin).
 
 The one hard constraint is the session. Sign in with Freebuff sets a `__Host-`
@@ -153,7 +153,8 @@ can only finish on the Worker's origin — a cookie set there is never sent to
 `*.vercel.app`, and the provider returns the code to the registered callback.
 The app stays signed in on Vercel through a **session handoff**:
 
-1. `GET /auth/handoff/begin` (a redirect in `vercel.json`) opens the Worker's
+1. `GET /auth/handoff/begin` (rewritten to `api/begin.ts` by `vercel.json`, so
+   the Worker's origin comes from `AUTH_ORIGIN` alone) opens the Worker's
    `/auth/freebuff/signin` with `returnTo=/auth/handoff/mint`.
 2. Sign in with Freebuff completes on the Worker origin, which sets its session
    cookie there.
@@ -194,9 +195,12 @@ do.
 `bun test` covers the auth boundary (only an unconfigured loopback origin gets
 the development user, configured auth uses the canonical origin, private routes
 refuse anonymous and foreign-origin requests with `Cache-Control: private,
-no-store`), the handoff (single-use codes, expiry, trusted origins) and the
-gateway rewrite (only `/api/` paths on this origin). `bun run typecheck` and
-`bun run build` must pass before a deploy.
+no-store`), the handoff (single-use codes, expiry, trusted origins), the
+gateway rewrite (only `/api/` paths on this origin, POST bodies carried
+through), chat's transport (one gateway path, SSE events split across chunks,
+refusals surfacing as `ApiError`) and the small pure pieces of `db.ts` (titles,
+the UTC day window, one schema bootstrap per isolate). `bun run typecheck`
+(covers `src/` and `api/`) and `bun run build` must pass before a deploy.
 
 ## Security notes
 
@@ -218,8 +222,9 @@ Personalised responses are `Cache-Control: private, no-store`.
 - `src/worker/auth.ts` — Freebuff integration, same-origin guard, dev user.
 - `src/worker/handoff.ts` — starts sign-in, mints and redeems the one-time
   handoff code, and signs out.
-- `api/` — the three Vercel functions: `gateway.ts` (API proxy), `handoff.ts`
-  (redeem a code), `signout.ts`.
+- `api/` — the four Vercel functions: `gateway.ts` (API proxy), `begin.ts`
+  (start sign-in on the Worker), `handoff.ts` (redeem a code), `signout.ts`.
+  They are typechecked separately by `tsconfig.api.json`.
 - `src/worker/ai.ts` — model capabilities, streaming, error mapping, token
   estimates.
 - `src/worker/routes/chat.ts` — one turn: limits, storage, SSE, usage.

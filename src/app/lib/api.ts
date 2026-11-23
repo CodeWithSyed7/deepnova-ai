@@ -139,8 +139,20 @@ export function useSetConversationModel() {
   const client = useQueryClient()
   return useMutation({
     mutationFn: ({ id, model }: { id: string; model: string }) => api<{ conversation: Conversation }>(`/conversations/${id}`, { method: 'PATCH', json: { model } }),
-    onMutate: ({ id, model }) => {
+    // The picker changes at once. A refused save puts the previous model back,
+    // instead of leaving the picker naming a model the chat does not have.
+    onMutate: async ({ id, model }) => {
+      await client.cancelQueries({ queryKey: ['conversation', id] })
+      const previous = client.getQueryData<ConversationPage>(['conversation', id])
       client.setQueryData<ConversationPage>(['conversation', id], (old) => old && { ...old, conversation: { ...old.conversation, model } })
+      return { previous }
+    },
+    onError: (_error, { id }, context) => {
+      if (context?.previous) client.setQueryData(['conversation', id], context.previous)
+      else void client.invalidateQueries({ queryKey: ['conversation', id] })
+    },
+    onSuccess: ({ conversation }, { id }) => {
+      client.setQueryData<ConversationPage>(['conversation', id], (old) => old && { ...old, conversation })
     },
   })
 }

@@ -30,7 +30,6 @@ const set = (next: Turn | null) => {
   turn = next
   emit()
 }
-const update = (patch: Partial<Turn>) => turn && set({ ...turn, ...patch })
 
 export function useTurn(): Turn | null {
   return useSyncExternalStore(
@@ -60,7 +59,9 @@ export async function startTurn(
   const optimisticUser: Message | null = request.regenerate
     ? null
     : { id: localId(), conversationId: request.conversationId ?? '', role: 'user', content: request.content ?? '', model: null, interrupted: false, createdAt: Date.now() }
-  set({
+  // This turn's own object. Every later mutation is scoped to it, so a turn
+  // that has been replaced or stopped can never write over its successor.
+  let self: Turn = {
     conversationId: request.conversationId ?? null,
     userMessage: optimisticUser,
     assistantMessageId: null,
@@ -69,11 +70,19 @@ export async function startTurn(
     error: null,
     model: request.model ?? '',
     stop: () => controller.abort(),
-  })
+  }
+  set(self)
+  const owns = () => turn === self
+  const patch = (next: Partial<Turn>) => {
+    if (!owns()) return
+    self = { ...self, ...next }
+    set(self)
+  }
 
   const finish = (message: Message | null, usage?: Me['usage']) => {
-    const current = turn
-    if (!current?.conversationId) return set(null)
+    if (!owns()) return
+    const current = self
+    if (!current.conversationId) return set(null)
     const id = current.conversationId
     client.setQueryData<ConversationPage>(['conversation', id], (old) => {
       if (!old) return old
@@ -93,29 +102,29 @@ export async function startTurn(
   }
 
   const onEvent = (event: ChatEvent) => {
-    if (!turn) return
+    if (!owns()) return
     switch (event.type) {
       case 'start': {
         const isNew = !request.conversationId
-        update({ conversationId: event.conversation.id, userMessage: event.userMessage, assistantMessageId: event.assistantMessageId, model: event.conversation.model })
+        patch({ conversationId: event.conversation.id, userMessage: event.userMessage, assistantMessageId: event.assistantMessageId, model: event.conversation.model })
         if (isNew) {
           client.setQueryData<ConversationPage>(['conversation', event.conversation.id], { conversation: event.conversation, messages: [event.userMessage] })
           upsertConversation(client, event.conversation)
           options.onConversation?.(event.conversation)
         } else if (!request.regenerate) {
           client.setQueryData<ConversationPage>(['conversation', event.conversation.id], (old) => old && { ...old, messages: [...old.messages, event.userMessage] })
-          update({ userMessage: null })
+          patch({ userMessage: null })
         }
         break
       }
       case 'delta':
-        update({ text: turn.text + event.text, status: 'streaming' })
+        patch({ text: self.text + event.text, status: 'streaming' })
         break
       case 'done':
         finish(event.message, event.usage)
         break
       case 'error':
-        update({ status: 'error', error: event.message })
+        patch({ status: 'error', error: event.message })
         break
     }
   }
@@ -123,8 +132,8 @@ export async function startTurn(
   try {
     await streamChat(request, { signal: controller.signal, onEvent })
     // The stream closed without `done` or `error`: treat whatever arrived as the reply.
-    if (turn && turn.status !== 'error') {
-      const current = turn
+    if (owns() && self.status !== 'error') {
+      const current = self
       finish(
         current.text && current.assistantMessageId && current.conversationId
           ? { id: current.assistantMessageId, conversationId: current.conversationId, role: 'assistant', content: current.text, model: current.model || null, interrupted: true, createdAt: Date.now() }
@@ -134,7 +143,7 @@ export async function startTurn(
   } catch (error) {
     if (controller.signal.aborted) {
       // Stopped by the user: keep the partial reply, marked as such.
-      const current = turn
+      const current = self
       finish(
         current?.text && current.assistantMessageId && current.conversationId
           ? { id: current.assistantMessageId, conversationId: current.conversationId, role: 'assistant', content: current.text, model: current.model || null, interrupted: true, createdAt: Date.now() }
@@ -142,7 +151,7 @@ export async function startTurn(
       )
       return
     }
-    set(null)
+    if (owns()) set(null)
     if (error instanceof ApiError) throw error
     throw new ApiError(0, 'Could not reach the server.')
   }

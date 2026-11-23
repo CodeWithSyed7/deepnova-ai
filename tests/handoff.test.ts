@@ -78,3 +78,23 @@ test('the gateway only rewrites paths on this origin under /api/', async () => {
     expect(response.status).toBe(400)
   }
 })
+
+test('the gateway carries a POST body through to the API route', async () => {
+  // Chat sends its turn through the gateway, so a POST must reach the route
+  // with its body — never fall through to the static handler as a 404.
+  const response = await worker.fetch(
+    new Request('http://localhost:5173/api/gateway?p=%2Fapi%2Fchat', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', origin: 'http://localhost:5173' },
+      body: JSON.stringify({ content: 'hello' }),
+    }),
+    {} as Env,
+    ctx,
+  )
+  // No database is attached in this test, so the route explains that itself.
+  expect(response.status).toBe(503)
+  expect(await response.json()).toEqual({
+    error: 'database_missing',
+    message: 'No database is attached yet. Add D1 storage named DB and redeploy.',
+  })
+})

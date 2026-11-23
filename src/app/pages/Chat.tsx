@@ -130,12 +130,19 @@ export function Chat() {
     )
   }
   if (id && page.error) {
+    // A missing chat is final; anything else (a dropped connection, a 500) is
+    // worth another try, and saying the chat vanished would be a lie.
+    const missing = page.error instanceof ApiError && page.error.status === 404
     return (
       <div className="grid flex-1 place-items-center p-6 text-center">
         <div>
-          <p className="text-[15px] font-medium">This chat is not here any more.</p>
-          <button type="button" onClick={() => navigate('/')} className="mt-2 text-[13.5px] text-muted underline underline-offset-2 hover:text-fg">
-            Start a new one
+          <p className="text-[15px] font-medium">{missing ? 'This chat is not here any more.' : 'Could not load this chat.'}</p>
+          <button
+            type="button"
+            onClick={() => (missing ? navigate('/') : void page.refetch())}
+            className="mt-2 text-[13.5px] text-muted underline underline-offset-2 hover:text-fg"
+          >
+            {missing ? 'Start a new one' : 'Try again'}
           </button>
         </div>
       </div>

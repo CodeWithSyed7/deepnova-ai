@@ -1,5 +1,5 @@
 import type { ChatEvent } from '../../shared/types'
-import { readError } from './api'
+import { apiUrl, readError } from './api'
 
 export type ChatRequest = { conversationId?: string; content?: string; model?: string; regenerate?: boolean }
 
@@ -9,7 +9,10 @@ export type ChatRequest = { conversationId?: string; content?: string; model?: s
  * the request itself is refused (limit reached, no key, bad input).
  */
 export async function streamChat(body: ChatRequest, options: { signal: AbortSignal; onEvent: (event: ChatEvent) => void }): Promise<void> {
-  const response = await fetch('/api/chat', {
+  // The same gateway path as every other call. Before this, chat alone posted
+  // to `/api/chat`, which only exists on the Worker: on a frontend host that
+  // proxies the API (api/gateway.ts on Vercel) every message 404'd.
+  const response = await fetch(apiUrl('/chat'), {
     method: 'POST',
     credentials: 'same-origin',
     headers: { 'content-type': 'application/json', accept: 'text/event-stream' },

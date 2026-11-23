@@ -56,18 +56,26 @@ const SCHEMA = [
   `CREATE INDEX IF NOT EXISTS handoff_codes_expires ON handoff_codes(expires_at)`,
 ]
 
-const ready = new WeakMap<D1Database, Promise<void>>()
+// One bootstrap per isolate. Keying this by the binding object missed on every
+// request (the D1 binding is not the same object from one request to the next),
+// so all twelve statements ran on every API call. They are `IF NOT EXISTS`, so
+// repeating them is only wasteful; a failure is still retried.
+let schemaReady: Promise<void> | undefined
 
 export function ensureSchema(db: D1Database): Promise<void> {
-  let pending = ready.get(db)
-  if (!pending) {
-    pending = db.batch(SCHEMA.map((sql) => db.prepare(sql))).then(() => undefined).catch((error) => {
-      ready.delete(db)
+  schemaReady ??= db
+    .batch(SCHEMA.map((sql) => db.prepare(sql)))
+    .then(() => undefined)
+    .catch((error) => {
+      schemaReady = undefined
       throw error
     })
-    ready.set(db, pending)
-  }
-  return pending
+  return schemaReady
+}
+
+/** Tests only: forget the cached bootstrap so the next call runs it again. */
+export function resetSchemaCacheForTests() {
+  schemaReady = undefined
 }
 
 export const requireDb: MiddlewareHandler<AppContext> = async (c, next) => {

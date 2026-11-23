@@ -43,6 +43,13 @@ export function Shell() {
   const [drawer, setDrawer] = useState(false)
   const location = useLocation()
   useEffect(() => setDrawer(false), [location.pathname])
+  // The drawer covers the page on a phone, so Escape has to close it.
+  useEffect(() => {
+    if (!drawer) return
+    const onKey = (event: KeyboardEvent) => event.key === 'Escape' && setDrawer(false)
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [drawer])
   return (
     <div className="flex h-dvh overflow-hidden">
       <aside className="hidden w-[264px] shrink-0 flex-col border-r border-line bg-bg md:flex">
@@ -52,6 +59,9 @@ export function Shell() {
         {drawer && (
           <motion.div key="drawer" className="fixed inset-0 z-40 bg-fg/30 md:hidden" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.18 }} onMouseDown={() => setDrawer(false)}>
             <motion.aside
+              role="dialog"
+              aria-modal="true"
+              aria-label="Chats"
               className="absolute inset-y-0 left-0 flex w-[284px] flex-col bg-bg shadow-dialog"
               initial={{ x: -40, opacity: 0 }}
               animate={{ x: 0, opacity: 1 }}
@@ -206,7 +216,8 @@ function ConversationRow({ conversation, streaming }: { conversation: Conversati
         <span className="min-w-0 flex-1 truncate">{conversation.title}</span>
         {streaming && <span className="round size-1.5 shrink-0 animate-pulse rounded-full bg-accent" />}
       </NavLink>
-      <span className={cx('absolute right-1 top-1/2 -translate-y-1/2 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100', active && 'opacity-100')}>
+      {/* Always visible where there is no hover, so a tap can reach it. */}
+      <span className={cx('absolute right-1 top-1/2 -translate-y-1/2 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100 md:focus-within:opacity-100', active && 'opacity-100')}>
         <Menu
           trigger={
             <Button variant="ghost" size="icon-sm" aria-label={`Options for ${conversation.title}`} className="size-7">

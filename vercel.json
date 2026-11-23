@@ -3,16 +3,13 @@
   "framework": "vite",
   "buildCommand": "npx vite build",
   "outputDirectory": "dist/client",
-  "redirects": [
-    {
-      "source": "/auth/handoff/begin",
-      "destination": "https://ai-chat-6gfzjw-preview.freebuff.site/auth/handoff/begin",
-      "permanent": false
-    }
-  ],
   "rewrites": [
     {
-      "source": "/((?!api/|auth/handoff/begin).*)",
+      "source": "/auth/handoff/begin",
+      "destination": "/api/begin"
+    },
+    {
+      "source": "/((?!api/).*)",
       "destination": "/index.html"
     }
   ]

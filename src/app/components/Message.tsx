@@ -64,7 +64,7 @@ export function AssistantMessage({
           </div>
         )}
         {!streaming && !error && (
-          <div className="mt-1.5 flex h-7 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+          <div className="mt-1.5 flex h-7 items-center gap-0.5 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100 md:focus-within:opacity-100">
             {interrupted && <span className="mr-2 text-[12px] text-faint">Stopped</span>}
             <button type="button" onClick={copy} aria-label={copied ? 'Copied' : 'Copy'} className="grid size-7 place-items-center rounded-[8px] text-faint transition-colors hover:bg-surface-2 hover:text-fg [&_svg]:size-3.5">
               {copied ? <Check /> : <Copy />}
